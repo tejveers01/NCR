@@ -299,9 +299,9 @@ def generate_ncr_report_for_eligo(df: pd.DataFrame, report_type: str, start_date
                 """Extract module numbers from description, prioritizing modules over common areas."""
                 description_lower = description.lower()
                 modules = set()
-            
+
                 # Pattern 1: Handle ranges like "Module 1 to 3" or "Module 1-3"
-                range_patterns = r"(?:module|mod|m)[-\s]*(\d+)\s*(?:to|-|–)\s*(\d+)(?!\s*(?:mm|floor))"
+                range_patterns = r"(?:module|mod|m)[-\s]*(\d+)(?!\s*(?:mm|th|rd|nd|st|floor))\s*(?:to|-|–)\s*(\d+)(?!\s*(?:mm|th|rd|nd|st|floor))"
                 for start_str, end_str in re.findall(range_patterns, description_lower, re.IGNORECASE):
                     try:
                         start, end = int(start_str), int(end_str)
@@ -309,11 +309,11 @@ def generate_ncr_report_for_eligo(df: pd.DataFrame, report_type: str, start_date
                             modules.update(f"Module {i}" for i in range(start, end + 1))
                     except ValueError:
                         continue
-            
+
                 # Pattern 2: Handle combinations like "Module 1 & 2" or "Module – 6 & 7"
                 combination_patterns = [
-                    r"module[-\s]*(?:–|-)?\s*(\d+)\s*[&and]+\s*(\d+)(?!\s*(?:mm|floor))",
-                    r"module[-\s]*(?:–|-)?\s*(\d+)\s*[,&]\s*(\d+)(?!\s*(?:mm|floor))",
+                    r"module[-\s]*(?:–|-)?\s*(\d+)(?!\s*(?:mm|th|rd|nd|st|floor))\s*[&and]+\s*(\d+)(?!\s*(?:mm|th|rd|nd|st|floor))",
+                    r"module[-\s]*(?:–|-)?\s*(\d+)(?!\s*(?:mm|th|rd|nd|st|floor))\s*[,&]\s*(\d+)(?!\s*(?:mm|th|rd|nd|st|floor))",
                 ]
                 for pattern in combination_patterns:
                     combo_matches = re.findall(pattern, description_lower, re.IGNORECASE)
@@ -327,112 +327,107 @@ def generate_ncr_report_for_eligo(df: pd.DataFrame, report_type: str, start_date
                                 modules.add(f"Module {num2}")
                         except ValueError:
                             continue
-            
-                # Pattern 3: Handle grouped modules like "Module 2&3", "M-7 & 6", "Mod 1,2,3"
-                list_pattern = r"(?:module|mod|m)[-\s]*((?:\d+\s*(?:,|&|and)?\s*)+)(?!\s*(?:mm|floor))"
+
+                # Pattern 3:  Handle grouped modules like "Module 2&3", "M-7 & 6", "Mod 1,2,3"
+                list_pattern = r"(?:module|mod|m)[-\s]*((?:\d+\s*(?:,|&|and)?\s*)+)(?!\s*(?:mm|th|rd|nd|st|floor))"
                 for match in re.findall(list_pattern, description_lower, re.IGNORECASE):
-                    for num in re.findall(r"\b\d{1,2}\b(?!\s*(?:mm|floor))", match, re.IGNORECASE):
+                    for num in re.findall(r"\b\d{1,2}\b(?!\s*(?:mm|th|rd|nd|st|floor))", match, re.IGNORECASE):
                         try:
                             num = int(num)
                             if 0 < num <= 50:
                                 modules.add(f"Module {num}")
                         except ValueError:
                             continue
-            
-                # Pattern 4: Handle single modules like "Module 3", "M-6", etc.
-                # FIXED: Removed overly restrictive lookahead for th/rd/nd/st
-                individual_patterns = r"(?:module|mod|m)[-\s]*(\d{1,2})(?!\s*(?:mm|floor))\b"
+
+                # Pattern 4:# --- 3️⃣ Handle single modules like "Module 3", "M-6", etc.
+
+                individual_patterns = r"(?:module|mod|m)[-\s]*(\d{1,2})(?!\s*(?:mm|th|rd|nd|st|floor))"
                 for num_str in re.findall(individual_patterns, description_lower, re.IGNORECASE):
                     try:
                         num = int(num_str)
                         if 0 < num <= 50:
                             modules.add(f"Module {num}")
                     except ValueError:
-                        continue
-            
+                            continue
+
                 # Handle corridor with modules
                 if "corridor" in description_lower and modules:
                     return sorted(list(modules))
-            
-                # Check for common areas only if NO modules found
+
+                # FIXED: Check for common areas only if NO modules found AND has specific common indicators
                 if not modules:
+                    # More specific common area patterns that truly indicate common areas
                     specific_common_patterns = [
                         r"steel\s+yard", r"qc\s+lab", r"cipl", r"nta\s+beam",
                         r"non\s+tower", r"foundation\s+level(?!\s+flat)",
                     ]
                     
+                    # Check for truly common areas (not tower-specific common areas)
                     for pattern in specific_common_patterns:
                         if re.search(pattern, description_lower, re.IGNORECASE):
                             return ["Common"]
                     
-                    # For descriptions without clear module numbers but with tower-specific indicators
+                    # For tower-specific descriptions without clear module numbers,
+                    # try to infer from context but be more conservative
                     if any(word in description_lower for word in ["housekeeping", "steel scrap", "first floor level"]):
-                        return ["Common"]
+                        # These could be tower-specific issues, return empty to let tower assignment handle it
+                        return ["Common"]  # Will be handled by tower assignment logic
                 
                 return sorted(list(modules)) if modules else ["Common"]
 
             def determine_tower_assignment(description):
                 """Assign tower based on description, prioritizing explicit tower mentions."""
                 description_lower = description.lower()
-                
-                # Check for clubhouse first
                 if any(phrase in description_lower for phrase in ["eligo clubhouse", "eligo-clubhouse", "eligo club"]):
                     return "Eligo-Club"
-            
-                # FIXED: Enhanced tower pattern matching for Tower H
-                # Pattern 1: Standard tower patterns
+
+                # Tower patterns - Added pattern to catch "Tower (F)" with brackets
                 tower_matches = re.findall(r"\b(?:tower|t)\s*[-\s(]*([fgh])\b", description_lower, re.IGNORECASE)
-                
-                # Pattern 2: Tower with brackets like "Tower (H)"
                 tower_bracket_matches = re.findall(r"tower\s*\(\s*([fgh])\s*\)", description_lower, re.IGNORECASE)
-                
-                # Pattern 3: Tower with dash like "Tower-H"
-                tower_dash_matches = re.findall(r"tower\s*-\s*([fgh])\b", description_lower, re.IGNORECASE)
-                
-                # Combine all patterns
-                all_tower_matches = tower_matches + tower_bracket_matches + tower_dash_matches
-                
-                # Remove duplicates while preserving order
-                seen = set()
-                all_tower_matches = [x for x in all_tower_matches if not (x in seen or seen.add(x))]
-                
-                # Multiple tower pattern
+                    
+                # Combine both patterns
+                all_tower_matches = tower_matches + tower_bracket_matches
+                    
                 multiple_tower_pattern = re.search(
-                    r"\btower\s*[-\s(]*([fgh])\b\s*(?:,|&|and)\s*(?:tower\s*[-\s(]*)?([fgh])\b",
+                    r"\btower\s*[-\s(]*([a-h])\b\s*(?:,|&|and)\s*(?:tower\s*[-\s(]*)?([a-h])\b",
                     description_lower, re.IGNORECASE
                 )
-                
-                # Check for specific indicators
+                    
+                # Check for specific module mentions
                 has_module = re.search(r"module\s*[-\s]*\d+", description_lower, re.IGNORECASE)
                 flat_no_pattern = re.search(r"flat\s*no", description_lower, re.IGNORECASE)
                 unit_pattern = re.search(r"unit\s*\d+", description_lower, re.IGNORECASE)
-                
-                # Common area indicators
+                    
+                # Common area indicators (areas truly common to all towers)
                 general_common_indicators = [
                     "steel yard", "qc lab", "cipl", "nta beam", "non tower"
                 ]
-                
+                    
+                # Tower-specific common area indicators
                 tower_common_indicators = [
                     "lift lobby", "corridor", "staircase"
                 ]
-                
+                    
+                # Structural elements that belong to specific tower (not common areas)
                 tower_structural_elements = [
                     "lift wall", "shear wall", "beam", "column", "slab", "foundation"
                 ]
-                
+                    
+                # Check if it's a general common area (no tower assignment)
                 is_general_common = any(indicator in description_lower for indicator in general_common_indicators)
                 is_tower_common = any(indicator in description_lower for indicator in tower_common_indicators)
                 is_structural_element = any(element in description_lower for element in tower_structural_elements)
-            
-                # If it's a general common area and no specific tower is mentioned
+
+                # If it's a general common area and no specific tower is mentioned, return Common_Area
                 if is_general_common and not all_tower_matches:
                     return "Common_Area"
-            
+
                 # Handle multiple tower assignments
                 if multiple_tower_pattern:
                     tower1 = multiple_tower_pattern.group(1).upper()
                     tower2 = multiple_tower_pattern.group(2).upper() if multiple_tower_pattern.group(2) else None
                     if tower2 and tower1 != tower2:
+                        # For structural elements or specific modules/flats, assign to tower directly
                         if is_structural_element or has_module or flat_no_pattern or unit_pattern:
                             return (f"Eligo-Tower-{tower1}", f"Eligo-Tower-{tower2}")
                         elif is_tower_common:
@@ -440,32 +435,33 @@ def generate_ncr_report_for_eligo(df: pd.DataFrame, report_type: str, start_date
                         else:
                             return (f"Eligo-Tower-{tower1}", f"Eligo-Tower-{tower2}")
                     else:
+                        # Single tower from multiple pattern
                         if is_structural_element or has_module or flat_no_pattern or unit_pattern:
                             return f"Eligo-Tower-{tower1}"
                         elif is_tower_common:
                             return f"Eligo-Tower-{tower1}-CommonArea"
                         else:
                             return f"Eligo-Tower-{tower1}"
-            
+
                 # Handle single tower assignments
                 elif all_tower_matches:
                     tower_letter = all_tower_matches[0].upper()
-                    
-                    # PRIORITY 1: Structural elements go directly to tower
+                    # PRIORITY 1: If it's a structural element, assign to tower directly
                     if is_structural_element:
                         return f"Eligo-Tower-{tower_letter}"
-                    # PRIORITY 2: Module/flat/unit mentions are tower-specific
+                    # PRIORITY 2: If tower is mentioned with module/flat/unit, it's tower-specific, not common area
                     elif has_module or flat_no_pattern or unit_pattern:
                         return f"Eligo-Tower-{tower_letter}"
-                    # PRIORITY 3: Common area indicators
+                    # PRIORITY 3: Only assign to CommonArea if it's truly common area indicators AND no structural elements
                     elif is_tower_common and not is_structural_element:
                         return f"Eligo-Tower-{tower_letter}-CommonArea"
-                    # PRIORITY 4: Default to tower-specific
+                    # PRIORITY 4: Default to tower-specific for any tower mention
                     else:
                         return f"Eligo-Tower-{tower_letter}"
-                
-                # No tower mentioned = general common area
-                return "Common_Area"
+                    
+                # If no tower is mentioned, it's a general common area
+                else:
+                    return "Common_Area"
 
             def process_chunk_locally(chunk, all_results, report_type):
                 """Process a chunk of data locally, grouping by Tower and calculating metrics."""
