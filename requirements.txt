@@ -1,0 +1,9 @@
+streamlit 
+requests 
+pandas 
+beautifulsoup4 
+python-dotenv 
+tenacity 
+urllib3 
+certifi
+xlsxwriter
