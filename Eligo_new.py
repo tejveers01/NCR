@@ -307,7 +307,6 @@ def generate_ncr_report_for_eligo(df: pd.DataFrame, report_type: str, start_date
             processed_data = filtered_df.to_dict(orient="records")
             
             cleaned_data = []
-            # unique_records = set()  # Use set to track unique records
 
             def extract_modules_from_description(description):
                 """Extract module numbers from description, prioritizing modules over common areas."""
@@ -353,8 +352,7 @@ def generate_ncr_report_for_eligo(df: pd.DataFrame, report_type: str, start_date
                         except ValueError:
                             continue
 
-                # Pattern 4:# --- 3️⃣ Handle single modules like "Module 3", "M-6", etc.
-
+                # Pattern 4: Handle single modules like "Module 3", "M-6", etc.
                 individual_patterns = r"(?:module|mod|m)[-\s]*(\d{1,2})(?!\s*(?:mm|th|rd|nd|st|floor))"
                 for num_str in re.findall(individual_patterns, description_lower, re.IGNORECASE):
                     try:
@@ -439,8 +437,9 @@ def generate_ncr_report_for_eligo(df: pd.DataFrame, report_type: str, start_date
                 # Handle multiple tower assignments
                 if multiple_tower_pattern:
                     tower1 = multiple_tower_pattern.group(1).upper()
-                    tower2 = multiple_tower_pattern.group(2).upper() if multiple_tower_pattern.group(2) else None
+                    tower2 = multiple_tower_pattern.group(2) if multiple_tower_pattern.group(2) else None
                     if tower2 and tower1 != tower2:
+                        tower2 = tower2.upper()
                         # For structural elements or specific modules/flats, assign to tower directly
                         if is_structural_element or has_module or flat_no_pattern or unit_pattern:
                             return (f"Eligo-Tower-{tower1}", f"Eligo-Tower-{tower2}")
@@ -541,7 +540,7 @@ def generate_ncr_report_for_eligo(df: pd.DataFrame, report_type: str, start_date
                 except Exception as e:
                     logger.error(f"Error in process_chunk_locally: {str(e)}")
 
-            # Process each record with unique identification
+            # Process each record
             for record in processed_data:
                 try:
                     cleaned_record = {
@@ -557,16 +556,6 @@ def generate_ncr_report_for_eligo(df: pd.DataFrame, report_type: str, start_date
                         cleaned_record["Days_From_Today"] = int(record.get("Days_From_Today", 0)) if pd.notna(record.get("Days_From_Today")) else 0
 
                     description = cleaned_record["Description"]
-                    
-                    # # CREATE UNIQUE IDENTIFIER FOR EACH RECORD
-                    # unique_id = f"{description}_{cleaned_record['Created Date (WET)']}_{cleaned_record['Status']}"
-                    
-                    # # # Skip if already processed
-                    # if unique_id in unique_records:
-                    #     logger.debug(f"Skipping duplicate record: {unique_id}")
-                    #     continue
-                    
-                    # unique_records.add(unique_id)
                     
                     # Extract modules
                     modules = extract_modules_from_description(description)
@@ -610,8 +599,8 @@ def generate_ncr_report_for_eligo(df: pd.DataFrame, report_type: str, start_date
                 return {report_type: {"Sites": {}, "Grand_Total": 0}}, ""
 
             # Log the total records being processed
-            st.write(f"Total unique records to process: {len(cleaned_data)}")
-            logger.info(f"Processing {len(cleaned_data)} unique records for {report_type} report")
+            st.write(f"Total records to process: {len(cleaned_data)}")
+            logger.info(f"Processing {len(cleaned_data)} records for {report_type} report")
 
             # Get access token
             try:
@@ -968,8 +957,8 @@ def generate_ncr_Housekeeping_report_for_eligo(df, report_type, start_date=None,
                     ].copy()
             else:  # Open
                 filtered_df = df[
-                    (df['Discipline'] == 'HSE') &
-                    (df['Status'] == 'Open') &
+                    (df['Discipline'] == 'HSE') & 
+                    (df['Status'] == 'Open') & 
                     (pd.to_datetime(df['Created Date (WET)']).notna()) &
                     (df['Description'].apply(is_housekeeping_record))
                 ].copy()
@@ -987,13 +976,13 @@ def generate_ncr_Housekeeping_report_for_eligo(df, report_type, start_date=None,
             filtered_df.loc[:, 'Expected Close Date (WET)'] = filtered_df['Expected Close Date (WET)'].astype(str)
 
             processed_data = filtered_df.to_dict(orient="records")
-            
+
+            # Build cleaned_data WITHOUT deduplication by description
             cleaned_data = []
-            seen_descriptions = set()
             for record in processed_data:
                 description = str(record.get("Description", "")).strip()
-                if description and description not in seen_descriptions:
-                    seen_descriptions.add(description)
+                # include every record (even duplicates) as long as description exists
+                if description:
                     cleaned_record = {
                         "Description": description,
                         "Created Date (WET)": str(record.get("Created Date (WET)", "")),
@@ -1253,18 +1242,14 @@ def generate_ncr_Housekeeping_report_for_eligo(df, report_type, start_date=None,
             status_placeholder.write(f"Processed {total_chunks}/{total_chunks} chunks (100%)")
             logger.debug(f"Final result before deduplication: {json.dumps(result, indent=2)}")
 
-            for site in result["Housekeeping"]["Sites"]:
-                result["Housekeeping"]["Sites"][site]["Descriptions"] = list(set(result["Housekeeping"]["Sites"][site]["Descriptions"]))
-                result["Housekeeping"]["Sites"][site]["Created Date (WET)"] = list(set(result["Housekeeping"]["Sites"][site]["Created Date (WET)"]))
-                result["Housekeeping"]["Sites"][site]["Expected Close Date (WET)"] = list(set(result["Housekeeping"]["Sites"][site]["Expected Close Date (WET)"]))
-                result["Housekeeping"]["Sites"][site]["Status"] = list(set(result["Housekeeping"]["Sites"][site]["Status"]))
-            
-            logger.debug(f"Final result after deduplication: {json.dumps(result, indent=2)}")
+            # NOTE: No deduplication here — preserve all records as they were returned/collected
+            logger.debug(f"Final result after processing (no deduplication applied): {json.dumps(result, indent=2)}")
             return result, json.dumps(result)
         except Exception as e:
             logger.error(f"Unexpected error in generate_ncr_Housekeeping_report: {str(e)}")
             st.error(f"❌ Unexpected Error: {str(e)}")
-            return {"error": f"Unexpected Error: {str(e)}"}, ""
+            return {"error": f"Unexpected Error: {str(e)}"}, "" 
+
     
 def clean_and_parse_json(generated_text):
     # Remove code block markers if present
@@ -1386,11 +1371,9 @@ def generate_ncr_Safety_report_for_eligo(df, report_type, start_date=None, end_d
             processed_data = filtered_df.to_dict(orient="records")
             
             cleaned_data = []
-            seen_descriptions = set()
             for record in processed_data:
                 description = str(record.get("Description", "")).strip()
-                if description and description not in seen_descriptions:
-                    seen_descriptions.add(description)
+                if description:
                     days = record.get("Days", 0)
                     days_from_today = record.get("Days_From_Today", 0)
                     
@@ -1426,7 +1409,7 @@ def generate_ncr_Safety_report_for_eligo(df, report_type, start_date=None, end_d
             logger.debug(f"Sample cleaned record: {cleaned_data[0] if cleaned_data else 'No records'}")
 
             if not cleaned_data:
-                logger.info("No safety records after deduplication and processing")
+                logger.info("No safety records after processing")
                 return {"Safety": {"Sites": {}, "Grand_Total": 0}}, ""
 
             result = {"Safety": {"Sites": {}, "Grand_Total": 0}}
@@ -1754,32 +1737,7 @@ def generate_ncr_Safety_report_for_eligo(df, report_type, start_date=None, end_d
 
             progress_bar.progress(100)
             status_placeholder.write(f"Processed {total_chunks}/{total_chunks} chunks (100%)")
-            logger.debug(f"Final result before deduplication: {json.dumps(result, indent=2)}")
-
-            # Deduplication and fix data types for PyArrow compatibility
-            for site in result["Safety"]["Sites"]:
-                # Ensure all values are strings and deduplicate
-                result["Safety"]["Sites"][site]["Descriptions"] = list(set(
-                    [str(desc) for desc in result["Safety"]["Sites"][site]["Descriptions"] if desc]
-                ))
-                result["Safety"]["Sites"][site]["Created Date (WET)"] = list(set(
-                    [str(date) for date in result["Safety"]["Sites"][site]["Created Date (WET)"] if date]
-                ))
-                result["Safety"]["Sites"][site]["Expected Close Date (WET)"] = list(set(
-                    [str(date) for date in result["Safety"]["Sites"][site]["Expected Close Date (WET)"] if date]
-                ))
-                result["Safety"]["Sites"][site]["Status"] = list(set(
-                    [str(status) for status in result["Safety"]["Sites"][site]["Status"] if status]
-                ))
-                # Update count to match actual unique items
-                result["Safety"]["Sites"][site]["Count"] = len(result["Safety"]["Sites"][site]["Descriptions"])
-            
-            # Recalculate grand total after deduplication
-            result["Safety"]["Grand_Total"] = sum(
-                site_data["Count"] for site_data in result["Safety"]["Sites"].values()
-            )
-            
-            logger.debug(f"Final result after deduplication: {json.dumps(result, indent=2)}")
+            logger.debug(f"Final result: {json.dumps(result, indent=2)}")
             
             # Clear progress displays
             progress_placeholder.empty()
@@ -2987,3 +2945,5 @@ def generate_report_title(prefix):
 # Generate Housekeeping NCR Report
 
 # All Reports Button
+
+
