@@ -986,6 +986,270 @@ def generate_ncr_Safety_report_for_eligo(df, report_type, start_date=None, end_d
 
 
 # ============================================================================
+# EXCEL GENERATION FUNCTIONS
+# ============================================================================
+
+def generate_consolidated_ncr_OpenClose_excel_for_eligo(combined_result, report_title="NCR"):
+    """Generate consolidated NCR Excel report"""
+    try:
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            workbook = writer.book
+            
+            title_format = workbook.add_format({
+                'bold': True, 'align': 'center', 'valign': 'vcenter', 'fg_color': 'yellow', 'border': 1
+            })
+            header_format = workbook.add_format({
+                'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1
+            })
+            cell_format = workbook.add_format({
+                'align': 'center', 'valign': 'vcenter', 'border': 1
+            })
+            
+            worksheet = workbook.add_worksheet('NCR Report')
+            worksheet.set_column('A:H', 15)
+            
+            now = datetime.now()
+            date_str = now.strftime("%d_%B_%Y")
+            worksheet.merge_range('A1:H1', f"{report_title} - {date_str}", title_format)
+            
+            row = 2
+            worksheet.write(row, 0, 'Site', header_format)
+            worksheet.write(row, 1, 'Resolved (SW)', header_format)
+            worksheet.write(row, 2, 'Resolved (FW)', header_format)
+            worksheet.write(row, 3, 'Resolved (MEP)', header_format)
+            worksheet.write(row, 4, 'Open (SW)', header_format)
+            worksheet.write(row, 5, 'Open (FW)', header_format)
+            worksheet.write(row, 6, 'Open (MEP)', header_format)
+            worksheet.write(row, 7, 'Total', header_format)
+            
+            row = 3
+            sites = combined_result.get("Sites", {})
+            for site, data in sites.items():
+                worksheet.write(row, 0, site, cell_format)
+                worksheet.write(row, 1, data.get("Resolved_SW", 0), cell_format)
+                worksheet.write(row, 2, data.get("Resolved_FW", 0), cell_format)
+                worksheet.write(row, 3, data.get("Resolved_MEP", 0), cell_format)
+                worksheet.write(row, 4, data.get("Open_SW", 0), cell_format)
+                worksheet.write(row, 5, data.get("Open_FW", 0), cell_format)
+                worksheet.write(row, 6, data.get("Open_MEP", 0), cell_format)
+                worksheet.write(row, 7, data.get("Total", 0), cell_format)
+                row += 1
+        
+        output.seek(0)
+        return output
+    except Exception as e:
+        logger.error(f"Error generating consolidated Excel: {str(e)}")
+        st.error(f"❌ Error generating Excel: {str(e)}")
+        return None
+
+def generate_consolidated_ncr_Housekeeping_excel_for_eligo(combined_result, report_title="Housekeeping"):
+    """Generate Housekeeping Excel report"""
+    try:
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            workbook = writer.book
+            
+            title_format = workbook.add_format({
+                'bold': True, 'align': 'center', 'valign': 'vcenter', 'fg_color': 'yellow', 'border': 1
+            })
+            header_format = workbook.add_format({
+                'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1
+            })
+            cell_format = workbook.add_format({
+                'align': 'center', 'valign': 'vcenter', 'border': 1
+            })
+            
+            worksheet = workbook.add_worksheet('Housekeeping')
+            worksheet.set_column('A:B', 20)
+            
+            now = datetime.now()
+            date_str = now.strftime("%d_%B_%Y")
+            worksheet.merge_range('A1:B1', f"{report_title} - {date_str}", title_format)
+            
+            row = 2
+            worksheet.write(row, 0, 'Site', header_format)
+            worksheet.write(row, 1, 'Count', header_format)
+            
+            row = 3
+            sites = combined_result.get("Sites", {})
+            for site, data in sites.items():
+                worksheet.write(row, 0, site, cell_format)
+                worksheet.write(row, 1, data.get("Count", 0), cell_format)
+                row += 1
+        
+        output.seek(0)
+        return output
+    except Exception as e:
+        logger.error(f"Error generating Housekeeping Excel: {str(e)}")
+        st.error(f"❌ Error generating Excel: {str(e)}")
+        return None
+
+def generate_consolidated_ncr_Safety_excel(combined_result, report_title="Safety"):
+    """Generate Safety Excel report"""
+    try:
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            workbook = writer.book
+            
+            title_format = workbook.add_format({
+                'bold': True, 'align': 'center', 'valign': 'vcenter', 'fg_color': 'yellow', 'border': 1
+            })
+            header_format = workbook.add_format({
+                'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1
+            })
+            cell_format = workbook.add_format({
+                'align': 'center', 'valign': 'vcenter', 'border': 1
+            })
+            
+            worksheet = workbook.add_worksheet('Safety')
+            worksheet.set_column('A:B', 20)
+            
+            now = datetime.now()
+            date_str = now.strftime("%d_%B_%Y")
+            worksheet.merge_range('A1:B1', f"{report_title} - {date_str}", title_format)
+            
+            row = 2
+            worksheet.write(row, 0, 'Site', header_format)
+            worksheet.write(row, 1, 'Count', header_format)
+            
+            row = 3
+            sites = combined_result.get("Sites", {})
+            for site, data in sites.items():
+                worksheet.write(row, 0, site, cell_format)
+                worksheet.write(row, 1, data.get("Count", 0), cell_format)
+                row += 1
+        
+        output.seek(0)
+        return output
+    except Exception as e:
+        logger.error(f"Error generating Safety Excel: {str(e)}")
+        st.error(f"❌ Error generating Excel: {str(e)}")
+        return None
+
+def generate_combined_excel_report_for_eligo(all_reports, filename_prefix="All_Reports"):
+    """Generate combined Excel report with all report types"""
+    try:
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            workbook = writer.book
+            
+            title_format = workbook.add_format({
+                'bold': True, 'align': 'center', 'valign': 'vcenter', 'fg_color': 'yellow', 'border': 1, 'font_size': 12
+            })
+            header_format = workbook.add_format({
+                'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1
+            })
+            cell_format = workbook.add_format({
+                'align': 'center', 'valign': 'vcenter', 'border': 1
+            })
+            site_format = workbook.add_format({
+                'align': 'left', 'valign': 'vcenter', 'border': 1
+            })
+            
+            now = datetime.now()
+            date_str = now.strftime("%d_%B_%Y")
+            
+            # Sheet 1: Combined Summary
+            worksheet_summary = workbook.add_worksheet('Summary')
+            worksheet_summary.set_column('A:E', 20)
+            worksheet_summary.merge_range('A1:E1', f'Combined NCR Report - {date_str}', title_format)
+            
+            row = 2
+            worksheet_summary.write(row, 0, 'Report Type', header_format)
+            worksheet_summary.write(row, 1, 'Total Records', header_format)
+            worksheet_summary.write(row, 2, 'Unique Records', header_format)
+            worksheet_summary.write(row, 3, 'Duplicates', header_format)
+            worksheet_summary.write(row, 4, 'Grand Total', header_format)
+            
+            row = 3
+            for report_name, report_data in all_reports.items():
+                if isinstance(report_data, dict) and "Grand_Total" in report_data:
+                    worksheet_summary.write(row, 0, report_name, site_format)
+                    worksheet_summary.write(row, 1, report_data.get("Total_Records", 0), cell_format)
+                    worksheet_summary.write(row, 2, report_data.get("Unique_Records", 0), cell_format)
+                    worksheet_summary.write(row, 3, report_data.get("Duplicate_Records", 0), cell_format)
+                    worksheet_summary.write(row, 4, report_data.get("Grand_Total", 0), cell_format)
+                    row += 1
+            
+            # Sheet 2: NCR Report
+            if "NCR_Report" in all_reports:
+                ncr_data = all_reports["NCR_Report"]
+                worksheet_ncr = workbook.add_worksheet('NCR')
+                worksheet_ncr.set_column('A:H', 15)
+                worksheet_ncr.merge_range('A1:H1', f'NCR Report - {date_str}', title_format)
+                
+                row = 2
+                worksheet_ncr.write(row, 0, 'Site', header_format)
+                worksheet_ncr.write(row, 1, 'SW', header_format)
+                worksheet_ncr.write(row, 2, 'FW', header_format)
+                worksheet_ncr.write(row, 3, 'MEP', header_format)
+                worksheet_ncr.write(row, 4, 'Total', header_format)
+                worksheet_ncr.write(row, 5, 'Duplicates', header_format)
+                worksheet_ncr.write(row, 6, 'Unique', header_format)
+                worksheet_ncr.write(row, 7, 'All Records', header_format)
+                
+                row = 3
+                sites = ncr_data.get("Sites", {})
+                for site, data in sites.items():
+                    worksheet_ncr.write(row, 0, site, site_format)
+                    worksheet_ncr.write(row, 1, data.get("SW", 0), cell_format)
+                    worksheet_ncr.write(row, 2, data.get("FW", 0), cell_format)
+                    worksheet_ncr.write(row, 3, data.get("MEP", 0), cell_format)
+                    worksheet_ncr.write(row, 4, data.get("Total", 0), cell_format)
+                    worksheet_ncr.write(row, 5, 0, cell_format)
+                    worksheet_ncr.write(row, 6, data.get("Total", 0), cell_format)
+                    worksheet_ncr.write(row, 7, data.get("Total", 0), cell_format)
+                    row += 1
+            
+            # Sheet 3: Housekeeping
+            if "Housekeeping_Report" in all_reports:
+                hk_data = all_reports["Housekeeping_Report"]
+                worksheet_hk = workbook.add_worksheet('Housekeeping')
+                worksheet_hk.set_column('A:C', 20)
+                worksheet_hk.merge_range('A1:C1', f'Housekeeping Report - {date_str}', title_format)
+                
+                row = 2
+                worksheet_hk.write(row, 0, 'Site', header_format)
+                worksheet_hk.write(row, 1, 'Count', header_format)
+                worksheet_hk.write(row, 2, 'Status', header_format)
+                
+                row = 3
+                sites = hk_data.get("Sites", {})
+                for site, data in sites.items():
+                    worksheet_hk.write(row, 0, site, site_format)
+                    worksheet_hk.write(row, 1, data.get("Count", 0), cell_format)
+                    worksheet_hk.write(row, 2, "Active", cell_format)
+                    row += 1
+            
+            # Sheet 4: Safety
+            if "Safety_Report" in all_reports:
+                safety_data = all_reports["Safety_Report"]
+                worksheet_safety = workbook.add_worksheet('Safety')
+                worksheet_safety.set_column('A:C', 20)
+                worksheet_safety.merge_range('A1:C1', f'Safety Report - {date_str}', title_format)
+                
+                row = 2
+                worksheet_safety.write(row, 0, 'Site', header_format)
+                worksheet_safety.write(row, 1, 'Count', header_format)
+                worksheet_safety.write(row, 2, 'Status', header_format)
+                
+                row = 3
+                sites = safety_data.get("Sites", {})
+                for site, data in sites.items():
+                    worksheet_safety.write(row, 0, site, site_format)
+                    worksheet_safety.write(row, 1, data.get("Count", 0), cell_format)
+                    worksheet_safety.write(row, 2, "Active", cell_format)
+                    row += 1
+        
+        output.seek(0)
+        return output
+    except Exception as e:
+        logger.error(f"Error generating combined Excel: {str(e)}")
+        st.error(f"❌ Error generating Excel: {str(e)}")
+        return None
+
+# ============================================================================
 # STREAMLIT MAIN APPLICATION
 # ============================================================================
 
