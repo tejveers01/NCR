@@ -213,6 +213,210 @@ def clean_and_parse_json(text: str) -> Dict:
 
 
 # ============================================================================
+# MAIN NCR REPORT GENERATION - PRESERVES ALL DUPLICATES
+# ============================================================================
+
+@st.cache_data
+def generate_ncr_report_for_eligo(df: pd.DataFrame, report_type: str, 
+                                  start_date=None, end_date=None, Until_Date=None) -> Tuple[Dict[str, Any], str]:
+    """Generate NCR report preserving ALL duplicate records."""
+    try:
+        with st.spinner(f"Generating {report_type} NCR Report..."):
+            if df is None or df.empty:
+                st.error("❌ Input DataFrame is empty or None")
+                return {"error": "Empty DataFrame"}, ""
+            
+            df = df.copy()
+            df = df[df['Created Date (WET)'].notna()]
+            
+            # Filter data
+            if report_type == "Closed":
+                try:
+                    start_date = pd.to_datetime(start_date) if start_date else df['Created Date (WET)'].min()
+                    end_date = pd.to_datetime(end_date) if end_date else df['Expected Close Date (WET)'].max()
+                except (ValueError, TypeError) as e:
+                    st.error(f"❌ Invalid date range: {str(e)}")
+                    return {"error": "Invalid date range"}, ""
+
+                df = df[df['Expected Close Date (WET)'].notna()]
+                
+                if 'Days' not in df.columns:
+                    df['Days'] = (pd.to_datetime(df['Expected Close Date (WET)']) - 
+                                 pd.to_datetime(df['Created Date (WET)'])).dt.days
+                
+                filtered_df = df[
+                    (df['Status'] == 'Closed') &
+                    (pd.to_datetime(df['Created Date (WET)']) >= start_date) &
+                    (pd.to_datetime(df['Created Date (WET)']) <= end_date) &
+                    (pd.to_numeric(df['Days'], errors='coerce') > 21)
+                ].copy()
+                
+            else:  # Open
+                if Until_Date is None:
+                    st.error("❌ Open Until Date is required for Open NCR Report")
+                    return {"error": "Open Until Date is required"}, ""
+                
+                try:
+                    today = pd.to_datetime(Until_Date)
+                except (ValueError, TypeError) as e:
+                    st.error(f"❌ Invalid date: {str(e)}")
+                    return {"error": "Invalid date"}, ""
+                    
+                filtered_df = df[df['Status'] == 'Open'].copy()
+                filtered_df.loc[:, 'Days_From_Today'] = (today - pd.to_datetime(
+                    filtered_df['Created Date (WET)'])).dt.days
+                filtered_df = filtered_df[filtered_df['Days_From_Today'] > 21].copy()
+
+            if filtered_df.empty:
+                st.warning(f"No {report_type} NCRs found")
+                return {"error": f"No {report_type} records"}, ""
+
+            # Process records WITHOUT deduplication
+            processed_data = filtered_df.to_dict(orient="records")
+            all_results = {report_type: {"Sites": {}, "Grand_Total": 0}}
+            
+            st.write(f"Total records to process: {len(processed_data)} (ALL duplicates preserved)")
+            logger.info(f"Processing {len(processed_data)} records - duplicates preserved")
+
+            for idx, record in enumerate(processed_data):
+                try:
+                    description = str(record.get("Description", "")).strip()
+                    discipline = str(record.get("Discipline", "")).strip().lower()
+                    
+                    # Skip invalid records
+                    if not discipline or discipline == "none" or "hse" in discipline:
+                        continue
+                    
+                    # Categorize
+                    if "structure" in discipline or "sw" in discipline:
+                        disc_category = "SW"
+                    elif "civil" in discipline or "finishing" in discipline or "fw" in discipline:
+                        disc_category = "FW"
+                    else:
+                        disc_category = "MEP"
+
+                    modules = extract_modules_from_description(description)
+                    tower = determine_tower_assignment(description)
+
+                    # Add to results - KEEP ALL DUPLICATES
+                    if tower not in all_results[report_type]["Sites"]:
+                        all_results[report_type]["Sites"][tower] = {
+                            "Descriptions": [],
+                            "Created Date (WET)": [],
+                            "Expected Close Date (WET)": [],
+                            "Status": [],
+                            "Discipline": [],
+                            "Modules": [],
+                            "SW": 0,
+                            "FW": 0,
+                            "MEP": 0,
+                            "Total": 0,
+                            "ModulesCount": {},
+                            "Record_IDs": []
+                        }
+                    
+                    site_data = all_results[report_type]["Sites"][tower]
+                    site_data["Descriptions"].append(description)
+                    site_data["Created Date (WET)"].append(str(record.get("Created Date (WET)", "")))
+                    site_data["Expected Close Date (WET)"].append(str(record.get("Expected Close Date (WET)", "")))
+                    site_data["Status"].append(str(record.get("Status", "")))
+                    site_data["Discipline"].append(str(record.get("Discipline", "")))
+                    site_data["Modules"].append(modules)
+                    site_data["Record_IDs"].append(idx)
+                    
+                    if disc_category in ["SW", "FW", "MEP"]:
+                        site_data[disc_category] += 1
+                    site_data["Total"] += 1
+                    
+                    for mod in modules:
+                        site_data["ModulesCount"][mod] = site_data["ModulesCount"].get(mod, 0) + 1
+                    
+                    all_results[report_type]["Grand_Total"] += 1
+                        
+                except Exception as e:
+                    logger.error(f"Error processing record {idx}: {str(e)}")
+                    continue
+
+            # Display summary with duplicates info
+            table_data = []
+            for site, data in all_results[report_type]["Sites"].items():
+                unique_desc = len(set(data["Descriptions"]))
+                dup_count = data["Total"] - unique_desc
+                table_data.append({
+                    "Site": site,
+                    "SW": data["SW"],
+                    "FW": data["FW"],
+                    "MEP": data["MEP"],
+                    "Total": data["Total"],
+                    "Unique": unique_desc,
+                    "Duplicates": dup_count
+                })
+            
+            if table_data:
+                df_table = pd.DataFrame(table_data)
+                st.write(f"### {report_type} NCR Summary (Duplicates Preserved)")
+                st.dataframe(df_table, use_container_width=True)
+
+            return all_results, json.dumps(all_results, default=str)
+
+    except Exception as e:
+        logger.error(f"Error: {str(e)}")
+        st.error(f"❌ Error: {str(e)}")
+        return {"error": str(e)}, ""
+
+
+def extract_modules_from_description(description: str) -> List[str]:
+    """Extract module numbers from description text."""
+    if not description:
+        return ["Common"]
+    
+    description_lower = description.lower()
+    modules = set()
+
+    # Pattern 1: Ranges like "Module 1 to 3"
+    range_patterns = r"(?:module|mod|m)[-\s]*(\d+)\s*(?:to|-|–)\s*(\d+)"
+    for start_str, end_str in re.findall(range_patterns, description_lower, re.IGNORECASE):
+        try:
+            start, end = int(start_str), int(end_str)
+            if 0 < start <= end <= 50:
+                modules.update(f"Module {i}" for i in range(start, end + 1))
+        except ValueError:
+            continue
+
+    # Pattern 2: Individual modules
+    individual_patterns = r"(?:module|mod|m)[-\s]*(\d{1,2})"
+    for num_str in re.findall(individual_patterns, description_lower, re.IGNORECASE):
+        try:
+            num = int(num_str)
+            if 0 < num <= 50:
+                modules.add(f"Module {num}")
+        except ValueError:
+            continue
+
+    return sorted(list(modules)) if modules else ["Common"]
+
+
+def determine_tower_assignment(description: str) -> str:
+    """Assign tower based on description keywords."""
+    if not description:
+        return "Common_Area"
+    
+    description_lower = description.lower()
+    
+    if any(phrase in description_lower for phrase in ["eligo clubhouse", "eligo-clubhouse", "eligo club"]):
+        return "Eligo-Club"
+
+    # Tower patterns
+    tower_matches = re.findall(r"\b(?:tower|t)\s*[-\s(]*([fgh])\b", description_lower, re.IGNORECASE)
+    
+    if tower_matches:
+        tower_letter = tower_matches[0].upper()
+        return f"Eligo-Tower-{tower_letter}"
+    
+    return "Common_Area"
+
+
+# ============================================================================
 # HOUSEKEEPING & SAFETY REPORTS - IMPROVED VERSION
 # ============================================================================
 
