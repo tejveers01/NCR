@@ -223,52 +223,72 @@ def clean_and_parse_json(text):
 def assign_site(description: str, standard_sites: list) -> list:
     """
     Assign tower sites based on description keywords.
-    Fixed to avoid cross-matching (EWS Tower 1 won't match EWS Tower 2, etc.)
+    Prioritizes explicit tower mentions (e.g., "EWS Tower 2", "Pour 3").
     """
     if not isinstance(description, str) or not description.strip():
         return ["Common Area"]
 
-    # Normalize description: lowercase, replace hyphens/commas with spaces
-    desc = re.sub(r'[-,]', ' ', description.lower()).strip()
-
-    # Initialize matched sites
+    # Normalize description: lowercase, remove hyphens and extra spaces
+    desc = description.lower().strip()
+    # Replace hyphens and multiple spaces with single space for pattern matching
+    desc_normalized = re.sub(r'[-\s]+', ' ', desc)
     matched = set()
 
-    # PRIORITY 1: Check for exact shorthand patterns first (most specific)
-    shorthand_patterns = {
-        r'\bews\s*1\b': "EWS Tower 1",
-        r'\bews\s*2\b': "EWS Tower 2",
-        r'\bews\s*3\b': "EWS Tower 3",
-        r'\bligh?\s*1\b': "LIG Tower 1",
-        r'\bligh?\s*2\b': "LIG Tower 2",
-        r'\bligh?\s*3\b': "LIG Tower 3",
-    }
-    
-    for pattern, site_name in shorthand_patterns.items():
-        if re.search(pattern, desc) and site_name in standard_sites:
+    # PRIORITY 1: Check for explicit "EWS Tower X" or "LIG Tower X" patterns
+    ews_tower_pattern = r'\bews\s+tower\s+([1-3])\b'
+    ews_matches = re.findall(ews_tower_pattern, desc)
+    for tower_num in ews_matches:
+        site_name = f"EWS Tower {tower_num}"
+        if site_name in standard_sites:
             matched.add(site_name)
 
-    # PRIORITY 2: If no shorthand match, check for full tower names
+    lig_tower_pattern = r'\bligh?\s+tower\s+([1-3])\b'
+    lig_matches = re.findall(lig_tower_pattern, desc)
+    for tower_num in lig_matches:
+        site_name = f"LIG Tower {tower_num}"
+        if site_name in standard_sites:
+            matched.add(site_name)
+
+    # PRIORITY 2: Check for shorthand patterns (e.g., "EWS 1", "EWS1", "LIG 2")
     if not matched:
-        ews_pattern = r'\bews\s+tower\s+([1-3])\b'
-        ews_matches = re.findall(ews_pattern, desc)
-        for tower_num in ews_matches:
-            site_name = f"EWS Tower {tower_num}"
+        shorthand_patterns = {
+            r'\bews\s*1\b': "EWS Tower 1",
+            r'\bews\s*2\b': "EWS Tower 2",
+            r'\bews\s*3\b': "EWS Tower 3",
+            r'\bligh?\s*1\b': "LIG Tower 1",
+            r'\bligh?\s*2\b': "LIG Tower 2",
+            r'\bligh?\s*3\b': "LIG Tower 3",
+        }
+        
+        for pattern, site_name in shorthand_patterns.items():
+            if re.search(pattern, desc) and site_name in standard_sites:
+                matched.add(site_name)
+
+    # PRIORITY 3: Check for "Pour X" patterns and map to towers
+    if not matched:
+        # Pour 3 and Pour 4 are typically in EWS Tower 2
+        pour_pattern = r'\bpour\s+([1-9])\b'
+        pour_matches = re.findall(pour_pattern, desc)
+        for pour_num in pour_matches:
+            pour_num_int = int(pour_num)
+            # Mapping logic: adjust based on your project structure
+            if pour_num_int in [3, 4]:
+                site_name = "EWS Tower 2"
+            elif pour_num_int in [1, 2]:
+                site_name = "EWS Tower 1"
+            elif pour_num_int in [5, 6]:
+                site_name = "EWS Tower 3"
+            else:
+                site_name = "Common Area"
+            
             if site_name in standard_sites:
                 matched.add(site_name)
 
-        lig_pattern = r'\bligh?\s+tower\s+([1-3])\b'
-        lig_matches = re.findall(lig_pattern, desc)
-        for tower_num in lig_matches:
-            site_name = f"LIG Tower {tower_num}"
-            if site_name in standard_sites:
-                matched.add(site_name)
-
-    # PRIORITY 3: Check for exact site names from standard_sites list
+    # PRIORITY 4: Check for exact site names from standard_sites list
     if not matched:
         for site in standard_sites:
             if site == "Common Area":
-                continue  # Skip Common Area in pattern matching
+                continue
             site_lower = site.lower()
             site_pattern = re.escape(site_lower).replace(' ', r'\s+').replace('lig', 'ligh?')
             if re.search(rf'\b{site_pattern}\b', desc):
@@ -2139,3 +2159,4 @@ def generate_report_title(prefix):
 # All Reports Button
 
         
+
