@@ -294,38 +294,74 @@ def generate_ncr_report_for_veridia(df: pd.DataFrame, report_type: str, start_da
                         cleaned_record["Modules"] = ["Common"]
                     else:
                         modules = set()
-
-                        # Handle ranges like "T-7 M1-3", "Tower 5, Module 1 to 4"
-                        range_pattern = r"(?:tower|t)?\s*-?\s*\d*\s*(?:module|mod|m)[-\s]*(\d+)\s*(?:to|-|–)\s*(\d+)"
-                        for start_str, end_str in re.findall(range_pattern, description, re.IGNORECASE):
-                            try:
-                                start, end = int(start_str), int(end_str)
-                                if 0 < start <= end <= 50:
-                                    modules.update(f"M{i}" for i in range(start, end + 1))
-                            except ValueError:
-                                continue
-
-                      # Handle lists like "Module 2&3", "M-7 & 6", "Mod 1,2,3"
-                        list_pattern = r"(?:module|mod|m)[-\s]*((?:\d+\s*(?:,|&|and)?\s*)+)(?=\b|[^a-z])"
-                        for match in re.findall(list_pattern, description, re.IGNORECASE):
-                            for num in re.findall(r"\b\d{1,2}\b(?!\s*(?:mm|th|rd|nd|st|floor))", match, re.IGNORECASE):
+                        
+                        # ✅ FIX 1: Handle ranges like "T-7 M1-3", "Tower 5, Module 1 to 4", "M7-M6"
+                        # This now catches both "to", "-", and "–" as range separators
+                        range_patterns = [
+                            r"(?:tower|t)?\s*-?\s*\d*\s*(?:module|mod|m)[-\s]*(\d+)\s*(?:to|-|–)\s*(?:module|mod|m)?\s*(\d+)",
+                            r"m\s*(\d+)\s*(?:to|-|–)\s*m\s*(\d+)"  # Catches "M7 - M6", "M7-M6"
+                        ]
+                        
+                        for pattern in range_patterns:
+                            for start_str, end_str in re.findall(pattern, description, re.IGNORECASE):
                                 try:
-                                    num = int(num)
-                                    if 0 < num <= 50:
-                                        modules.add(f"M{num}")
+                                    start, end = int(start_str), int(end_str)
+                                    # Handle both ascending and descending ranges (e.g., 7 to 6 or 1 to 3)
+                                    min_val, max_val = min(start, end), max(start, end)
+                                    if 0 < min_val <= max_val <= 50:
+                                        modules.update(f"M{i}" for i in range(min_val, max_val + 1))
                                 except ValueError:
                                     continue
-
-                        # Handle individual single mentions like "M-2", "Mod 5"
+                    
+                        # ✅ FIX 2: Handle lists like "Module 2&3", "M-7 & 6", "Mod 1,2,3", "M7&6"
+                        # Improved to catch separators: comma, ampersand, "and", slash
+                        list_patterns = [
+                            r"(?:module|mod|m)[-\s]*((?:\d+(?:\s*[,&/]|\s+and\s+)?)+)(?=\b|[^a-z0-9])",
+                            r"m\s*((?:\d+(?:\s*[,&/]|\s+and\s+)?)+)(?=\b|[^a-z])"  # Catches bare "M" lists
+                        ]
+                        
+                        for pattern in list_patterns:
+                            for match in re.findall(pattern, description, re.IGNORECASE):
+                                # Extract all numbers from the match
+                                for num_str in re.findall(r"\d{1,2}", match):
+                                    try:
+                                        num = int(num_str)
+                                        if 0 < num <= 50:
+                                            modules.add(f"M{num}")
+                                    except ValueError:
+                                        continue
+                    
+                        # ✅ FIX 3: Handle individual single mentions like "M-2", "Mod 5", "at M7"
+                        # More comprehensive pattern to catch single module mentions
+                        single_patterns = [
+                            r"(?:module|mod|m)[-\s]*(\d{1,2})(?!\w)",  # "Module 5", "M-7", "Mod 2"
+                            r"(?:at|in|on|floor|level)\s+(?:module|mod|m)?\s*(\d{1,2})(?!\w)",  # "at module 5", "on M7"
+                            r"(?:tower|t)\s*-?\s*\d+\s+(?:module|mod|m)?\s*(\d{1,2})(?!\w)",  # "Tower 7 Module 1"
+                        ]
+                        
+                        if not modules:  # Only use single patterns if we haven't found anything yet
+                            for pattern in single_patterns:
+                                for num_str in re.findall(pattern, description, re.IGNORECASE):
+                                    try:
+                                        num = int(num_str)
+                                        if 0 < num <= 50:
+                                            modules.add(f"M{num}")
+                                    except ValueError:
+                                        continue
+                    
+                        # ✅ FIX 4: Fallback - Extract ALL numbers 1-50 from description if no pattern matches
+                        # This ensures no module references are missed
                         if not modules:
-                            for num in re.findall(r"(?:module|mod|m)[-\s]*(\d{1,2})(?!\s*(?:mm|th|rd|nd|st|floor))", description, re.IGNORECASE):
+                            all_numbers = re.findall(r"\b([1-9]|[1-4]\d|50)\b", description)
+                            for num_str in all_numbers:
                                 try:
-                                    num = int(num)
+                                    num = int(num_str)
                                     if 0 < num <= 50:
                                         modules.add(f"M{num}")
                                 except ValueError:
                                     continue
-                                
+                        
+                        # ✅ Ensure we always have at least "Common" if no modules found
                         cleaned_record["Modules"] = sorted(list(modules)) if modules else ["Common"]
 
                     # Discipline categorization
