@@ -224,7 +224,7 @@ if "session_id" not in st.session_state:
 
 st.sidebar.title("🔒 Asite Login")
 email = st.sidebar.text_input("Email", "impwatson@gadieltechnologies.com", key="email_input")
-password = st.sidebar.text_input("Password", "Srihari@790$", type="password", key="password_input")
+password = st.sidebar.text_input("Password", "Wave2026@123$", type="password", key="password_input")
 if st.sidebar.button("Login", key="login_button"):
     session_id = login_to_asite(email, password)
     if session_id:
